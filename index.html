@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <title>Polyvalence Tracker (SQL Automat)</title>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --card-bg: #ffffff;
+            --text-main: #333333;
+            --border-color: #dcdcdc;
+            --primary: #1976d2;
+            --color-i: #fbc02d;
+            --color-l: #f57c00;
+            --color-u: #388e3c;
+            --color-o: #7b1fa2;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e293b;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .header-title-area h1 { margin: 0; font-size: 20px; }
+        .header-subtitle { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-secondary {
+            background: #64748b;
+        }
+        
+        /* Souhrnný panel */
+        .summary-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 5px solid #ccc;
+            display: flex;
+            flex-direction: column;
+        }
+        .summary-card.i { border-left-color: var(--color-i); }
+        .summary-card.l { border-left-color: var(--color-l); }
+        .summary-card.u { border-left-color: var(--color-u); }
+        .summary-card.o { border-left-color: var(--color-o); }
+        .summary-title { font-size: 13px; font-weight: bold; color: #555; text-transform: uppercase; }
+        .summary-value { font-size: 18px; font-weight: bold; margin-top: 5px; color: #1e293b; }
+
+        .toolbar {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        .toolbar div {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        input[type="date"], input[type="text"], select {
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            min-width: 150px;
+        }
+        .checkbox-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding-top: 6px;
+        }
+        .checkbox-group label {
+            font-weight: normal;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .operator-section {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .operator-header {
+            font-size: 16px;
+            font-weight: bold;
+            color: #1e293b;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            border-left-width: 5px;
+        }
+        .card.cat-i { border-left-color: var(--color-i); }
+        .card.cat-l { border-left-color: var(--color-l); }
+        .card.cat-u { border-left-color: var(--color-u); }
+        .card.cat-o { border-left-color: var(--color-o); }
+
+        .badge {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+            font-size: 13px;
+        }
+        .badge.i { background: var(--color-i); }
+        .badge.l { background: var(--color-l); }
+        .badge.u { background: var(--color-u); }
+        .badge.o { background: var(--color-o); }
+
+        .card-content { flex-grow: 1; overflow: hidden; }
+        .card-title { font-weight: bold; font-size: 12px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .card-time { font-size: 11px; color: #666; }
+
+        /* Modal okno pro nastavení */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            width: 350px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .modal-content h3 { margin-top: 0; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; }
+        .form-group input { width: 100%; box-sizing: border-box; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title-area">
+            <h1>Polyvalence Tracker (SQL Automat)</h1>
+            <div id="active-date-range" class="header-subtitle">Zobrazené období: Načítá se...</div>
+        </div>
+        <div>
+            <button class="btn" onclick="openSettings()">⚙️ Nastavení limitů</button>
+            <button class="btn" onclick="loadData()">🔄 Obnovit data z SQL</button>
+        </div>
+    </header>
+
+    <!-- SOUHRNNÝ PANEL PODLE ILUO -->
+    <div class="summary-panel">
+        <div class="summary-card i">
+            <span class="summary-title">Úroveň I (bezpečnost)</span>
+            <span class="summary-value" id="sum-i">0 ks (0 h)</span>
+        </div>
+        <div class="summary-card l">
+            <span class="summary-title">Úroveň L (kvalita)</span>
+            <span class="summary-value" id="sum-l">0 ks (0 h)</span>
+        </div>
+        <div class="summary-card u">
+            <span class="summary-title">Úroveň U (cyklus)</span>
+            <span class="summary-value" id="sum-u">0 ks (0 h)</span>
+        </div>
+        <div class="summary-card o">
+            <span class="summary-title">Úroveň O (školitel)</span>
+            <span class="summary-value" id="sum-o">0 ks (0 h)</span>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div>
+            <label>Od:</label>
+            <input type="date" id="filter-from" onchange="loadData()">
+        </div>
+        <div>
+            <label>Do:</label>
+            <input type="date" id="filter-to" value="" onchange="loadData()">
+        </div>
+        <div>
+            <label>Operátor:</label>
+            <input type="text" id="filter-op" placeholder="např. 1491" oninput="filterData()">
+        </div>
+        <div>
+            <label>Lis / Stroj:</label>
+            <select id="filter-press" onchange="filterData()">
+                <option value="">-- Všechny lisy --</option>
+            </select>
+        </div>
+        <div>
+            <label>Směna / Tým:</label>
+            <select id="filter-shift" onchange="filterData()">
+                <option value="">-- Všechny směny --</option>
+            </select>
+        </div>
+        <div>
+            <label>Úrovně ILUO:</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" name="iluo" value="i" checked onchange="filterData()"> I</label>
+                <label><input type="checkbox" name="iluo" value="l" checked onchange="filterData()"> L</label>
+                <label><input type="checkbox" name="iluo" value="u" checked onchange="filterData()"> U</label>
+                <label><input type="checkbox" name="iluo" value="o" checked onchange="filterData()"> O</label>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-secondary" onclick="resetFilters()">❌ Zrušit filtry</button>
+        </div>
+    </div>
+
+    <!-- Zde se dynamicky vykreslí sekce podle operátorů -->
+    <div id="operators-container"></div>
+
+    <!-- MODAL OKNO PRO NASTAVENÍ LIMITŮ -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <h3>Nastavení limitů (v sekundách)</h3>
+            <div class="form-group">
+                <label>Úroveň I (bezpečnost - do):</label>
+                <input type="number" id="inputI" value="7200">
+            </div>
+            <div class="form-group">
+                <label>Úroveň L (kvalita - do):</label>
+                <input type="number" id="inputL" value="144000">
+            </div>
+            <div class="form-group">
+                <label>Úroveň U (cyklus - od):</label>
+                <input type="number" id="inputU" value="288000">
+            </div>
+            <div class="form-group">
+                <label>Úroveň O (školitel - od):</label>
+                <input type="number" id="inputO" value="1728000">
+            </div>
+            <div class="modal-actions">
+                <button class="btn" style="background:#6c757d;" onclick="closeSettings()">Zrušit</button>
+                <button class="btn" onclick="saveSettings()">Uložit</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const defaultThresholds = {
+            I: 7200,
+            L: 144000,
+            U: 288000,
+            O: 1728000
+        };
+
+        let thresholds;
+        try {
+            thresholds = JSON.parse(localStorage.getItem('polyvalence_thresholds')) || { ...defaultThresholds };
+        } catch (err) {
+            thresholds = { ...defaultThresholds };
+        }
+
+        let allRecords = [];
+
+        function initDefaultDates() {
+            const d = new Date();
+            d.setMonth(d.getMonth() - 3);
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            document.getElementById('filter-from').value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        function updateDateRangeLabel(from, to) {
+            let labelText = "Zobrazené období: ";
+            if (from && to) {
+                labelText += `od ${from} do ${to}`;
+            } else if (from) {
+                labelText += `od ${from} do neomezeno`;
+            } else if (to) {
+                labelText += `od počátku do ${to}`;
+            } else {
+                labelText += `Kompletní historie (bez omezení datumu)`;
+            }
+            document.getElementById('active-date-range').textContent = labelText;
+        }
+
+        async function loadData() {
+            const from = document.getElementById('filter-from').value;
+            const to = document.getElementById('filter-to').value;
+
+            updateDateRangeLabel(from, to);
+
+            let url = `/api/polyvalence-data?`;
+            if (from) url += `from=${from}&`;
+            if (to) url += `to=${to}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Server returned an error');
+                allRecords = data.records || [];
+                populateDropdowns();
+                filterData();
+            } catch (err) {
+                console.error("Chyba při načítání dat:", err);
+                alert("Nepodařilo se načíst data ze serveru.");
+            }
+        }
+
+        function populateDropdowns() {
+            // Lis
+            const pressSelect = document.getElementById('filter-press');
+            const currentPress = pressSelect.value;
+            const presses = [...new Set(allRecords.map(item => item.type).filter(Boolean))].sort();
+            
+            pressSelect.innerHTML = '<option value="">-- Všechny lisy --</option>';
+            presses.forEach(press => {
+                const opt = document.createElement('option');
+                opt.value = press;
+                opt.textContent = press;
+                pressSelect.appendChild(opt);
+            });
+            pressSelect.value = currentPress;
+
+            // Směna
+            const shiftSelect = document.getElementById('filter-shift');
+            const currentShift = shiftSelect.value;
+            const shifts = [...new Set(allRecords.map(item => item.shift).filter(Boolean))].sort();
+
+            shiftSelect.innerHTML = '<option value="">-- Všechny směny --</option>';
+            shifts.forEach(shift => {
+                const opt = document.createElement('option');
+                opt.value = shift;
+                opt.textContent = shift;
+                shiftSelect.appendChild(opt);
+            });
+            shiftSelect.value = currentShift;
+        }
+
+        function resetFilters() {
+            initDefaultDates();
+            document.getElementById('filter-to').value = '';
+            document.getElementById('filter-op').value = '';
+            document.getElementById('filter-press').value = '';
+            document.getElementById('filter-shift').value = '';
+            document.querySelectorAll('input[name="iluo"]').forEach(cb => cb.checked = true);
+            loadData();
+        }
+
+        function getCategory(seconds) {
+            if (seconds >= thresholds.O) return 'o';
+            if (seconds >= thresholds.U) return 'u';
+            if (seconds >= thresholds.I) return 'l';
+            return 'i';
+        }
+
+        function updateSummary(filteredRecords) {
+            const stats = {
+                i: { count: 0, seconds: 0 },
+                l: { count: 0, seconds: 0 },
+                u: { count: 0, seconds: 0 },
+                o: { count: 0, seconds: 0 }
+            };
+
+            filteredRecords.forEach(item => {
+                const sec = item.time_seconds || 0;
+                const cat = getCategory(sec);
+                stats[cat].count++;
+                stats[cat].seconds += sec;
+            });
+
+            for (const [key, data] of Object.entries(stats)) {
+                const hours = (data.seconds / 3600).toFixed(1);
+                document.getElementById(`sum-${key}`).textContent = `${data.count} ks (${hours} h)`;
+            }
+        }
+
+        function filterData() {
+            const opFilter = document.getElementById('filter-op').value.trim().toLowerCase();
+            const pressFilter = document.getElementById('filter-press').value;
+            const shiftFilter = document.getElementById('filter-shift').value;
+            const selectedIluos = Array.from(document.querySelectorAll('input[name="iluo"]:checked')).map(cb => cb.value);
+
+            const container = document.getElementById('operators-container');
+            container.innerHTML = '';
+
+            const filtered = allRecords.filter(item => {
+                if (opFilter && !String(item.op).toLowerCase().includes(opFilter)) return false;
+                if (pressFilter && item.type !== pressFilter) return false;
+                if (shiftFilter && item.shift !== shiftFilter) return false;
+                
+                const cat = getCategory(item.time_seconds || 0);
+                if (selectedIluos.length > 0 && !selectedIluos.includes(cat)) return false;
+
+                return true;
+            });
+
+            updateSummary(filtered);
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<p style="text-align:center; color:#777; padding: 20px; background:white; border-radius:8px;">Žádná data k zobrazení.</p>';
+                return;
+            }
+
+            const groupedByOp = Object.create(null);
+            filtered.forEach(item => {
+                const opKey = item.op || 'Neznámý';
+                if (!groupedByOp[opKey]) {
+                    groupedByOp[opKey] = [];
+                }
+                groupedByOp[opKey].push(item);
+            });
+
+            for (const [op, items] of Object.entries(groupedByOp)) {
+                const section = document.createElement('div');
+                section.className = 'operator-section';
+
+                const header = document.createElement('div');
+                header.className = 'operator-header';
+                const operatorName = document.createElement('span');
+                operatorName.textContent = `Operátor ${op}`;
+                const itemCount = document.createElement('span');
+                itemCount.style.fontSize = '13px';
+                itemCount.style.color = '#666';
+                itemCount.style.fontWeight = 'normal';
+                itemCount.textContent = `Položek: ${items.length}`;
+                header.append(operatorName, itemCount);
+                section.appendChild(header);
+
+                const grid = document.createElement('div');
+                grid.className = 'grid';
+
+                items.forEach(item => {
+                    const sec = item.time_seconds || 0;
+                    const hours = (sec / 3600).toFixed(1);
+                    const cat = getCategory(sec);
+
+                    const card = document.createElement('div');
+                    card.className = `card cat-${cat}`;
+                    const badge = document.createElement('div');
+                    badge.className = `badge ${cat}`;
+                    badge.textContent = cat.toUpperCase();
+
+                    const cardContent = document.createElement('div');
+                    cardContent.className = 'card-content';
+
+                    const cardTitle = document.createElement('div');
+                    cardTitle.className = 'card-title';
+                    cardTitle.textContent = item.label || '';
+                    cardTitle.title = item.label || '';
+
+                    const cardTime = document.createElement('div');
+                    cardTime.className = 'card-time';
+                    cardTime.textContent = `Čas: ${sec} s (${hours} h) | Lis: ${item.type || '-'} | Směna: ${item.shift || '-'}`;
+
+                    cardContent.append(cardTitle, cardTime);
+                    card.append(badge, cardContent);
+                    grid.appendChild(card);
+                });
+
+                section.appendChild(grid);
+                container.appendChild(section);
+            }
+        }
+
+        function openSettings() {
+            document.getElementById('inputI').value = thresholds.I;
+            document.getElementById('inputL').value = thresholds.L;
+            document.getElementById('inputU').value = thresholds.U;
+            document.getElementById('inputO').value = thresholds.O;
+            document.getElementById('settingsModal').style.display = 'flex';
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').style.display = 'none';
+        }
+
+        function saveSettings() {
+            thresholds.I = parseInt(document.getElementById('inputI').value) || 7200;
+            thresholds.L = parseInt(document.getElementById('inputL').value) || 144000;
+            thresholds.U = parseInt(document.getElementById('inputU').value) || 288000;
+            thresholds.O = parseInt(document.getElementById('inputO').value) || 1728000;
+
+            localStorage.setItem('polyvalence_thresholds', JSON.stringify(thresholds));
+
+            closeSettings();
+            filterData();
+        }
+
+        window.onload = () => {
+            initDefaultDates();
+            loadData();
+        };
+    </script>
+</body>
+</html>
