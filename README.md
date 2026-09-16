@@ -24,4 +24,6 @@ Jednoduchá Node.js/Express aplikace s frontendem v `index.html` a API pro nač�
 
 Aplikace je dostupná na `http://localhost:3000`. Stav kontejneru lze ověřit na `/health`.
 
-Pro SQL Server s pevně nastaveným TCP portem použij `SQL_PORT` místo `SQL_INSTANCE`.
+Na `spc-vm` nastav `SQL_SERVER` na Cyclades SQL host/IP dostupný z VM a
+`SQL_PORT=1433`. DNS jméno nemusí být z VM spolehlivě dostupné. `SQL_INSTANCE`
+používej jen tehdy, pokud se připojuješ přes SQL Server Browser místo pevného portu.
