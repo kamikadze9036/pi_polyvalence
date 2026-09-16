@@ -44,8 +44,23 @@
             font-weight: bold;
         }
         .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.6; cursor: wait; }
         .btn-secondary {
             background: #64748b;
+        }
+
+        .data-status {
+            min-height: 18px;
+            margin: -8px 0 12px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .data-status.error {
+            color: #b91c1c;
+            font-weight: bold;
+        }
+        .data-status.success {
+            color: #166534;
         }
         
         /* Souhrnný panel */
@@ -190,6 +205,7 @@
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; font-size: 12px; font-weight: bold; margin-bottom: 5px; }
         .form-group input { width: 100%; box-sizing: border-box; }
+        .settings-error { min-height: 18px; margin-bottom: 10px; color: #b91c1c; font-size: 12px; font-weight: bold; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
     </style>
 </head>
@@ -202,7 +218,7 @@
         </div>
         <div>
             <button class="btn" onclick="openSettings()">⚙️ Nastavení limitů</button>
-            <button class="btn" onclick="loadData()">🔄 Obnovit data z SQL</button>
+            <button class="btn" id="refresh-data-btn" onclick="loadData()">🔄 Obnovit data z SQL</button>
         </div>
     </header>
 
@@ -237,7 +253,7 @@
         </div>
         <div>
             <label>Operátor:</label>
-            <input type="text" id="filter-op" placeholder="např. 1491" oninput="filterData()">
+            <input type="text" id="filter-op" placeholder="např. 1491" maxlength="20" oninput="filterData()">
         </div>
         <div>
             <label>Lis / Stroj:</label>
@@ -265,6 +281,8 @@
         </div>
     </div>
 
+    <div id="data-status" class="data-status" role="status" aria-live="polite"></div>
+
     <!-- Zde se dynamicky vykreslí sekce podle operátorů -->
     <div id="operators-container"></div>
 
@@ -274,22 +292,24 @@
             <h3>Nastavení limitů (v sekundách)</h3>
             <div class="form-group">
                 <label>Úroveň I (bezpečnost - do):</label>
-                <input type="number" id="inputI" value="7200">
+                <input type="number" id="inputI" value="7200" min="0" step="1" inputmode="numeric">
             </div>
             <div class="form-group">
                 <label>Úroveň L (kvalita - do):</label>
-                <input type="number" id="inputL" value="144000">
+                <input type="number" id="inputL" value="144000" min="0" step="1" inputmode="numeric">
             </div>
             <div class="form-group">
                 <label>Úroveň U (cyklus - od):</label>
-                <input type="number" id="inputU" value="288000">
+                <input type="number" id="inputU" value="288000" min="0" step="1" inputmode="numeric">
             </div>
             <div class="form-group">
                 <label>Úroveň O (školitel - od):</label>
-                <input type="number" id="inputO" value="1728000">
+                <input type="number" id="inputO" value="1728000" min="0" step="1" inputmode="numeric">
             </div>
+            <div id="settings-error" class="settings-error" role="alert" aria-live="polite"></div>
             <div class="modal-actions">
                 <button class="btn" style="background:#6c757d;" onclick="closeSettings()">Zrušit</button>
+                <button class="btn btn-secondary" onclick="resetThresholds()">Výchozí</button>
                 <button class="btn" onclick="saveSettings()">Uložit</button>
             </div>
         </div>
@@ -303,14 +323,44 @@
             O: 1728000
         };
 
+        function isValidThresholdSet(values) {
+            if (!values) return false;
+            const numbers = ['I', 'L', 'U', 'O'].map(key => values[key]);
+            return numbers.every(value => Number.isInteger(value) && value >= 0 && value <= 2147483647)
+                && values.I <= values.L && values.L <= values.U && values.U <= values.O;
+        }
+
         let thresholds;
         try {
-            thresholds = JSON.parse(localStorage.getItem('polyvalence_thresholds')) || { ...defaultThresholds };
+            const storedThresholds = JSON.parse(localStorage.getItem('polyvalence_thresholds'));
+            thresholds = isValidThresholdSet(storedThresholds) ? storedThresholds : { ...defaultThresholds };
         } catch (err) {
             thresholds = { ...defaultThresholds };
         }
 
         let allRecords = [];
+        let activeRequestController = null;
+
+        function setDataStatus(message, state = '') {
+            const status = document.getElementById('data-status');
+            status.textContent = message;
+            status.className = `data-status${state ? ` ${state}` : ''}`;
+        }
+
+        function validateDateFilters(from, to) {
+            const toInput = document.getElementById('filter-to');
+            toInput.setCustomValidity('');
+
+            if (from && to && from > to) {
+                const message = 'Datum „Do“ nesmí být před datem „Od“.';
+                toInput.setCustomValidity(message);
+                setDataStatus(message, 'error');
+                toInput.reportValidity();
+                return false;
+            }
+
+            return true;
+        }
 
         function initDefaultDates() {
             const d = new Date();
@@ -338,23 +388,48 @@
         async function loadData() {
             const from = document.getElementById('filter-from').value;
             const to = document.getElementById('filter-to').value;
+            const refreshButton = document.getElementById('refresh-data-btn');
+
+            if (!validateDateFilters(from, to)) return;
 
             updateDateRangeLabel(from, to);
 
-            let url = `/api/polyvalence-data?`;
-            if (from) url += `from=${from}&`;
-            if (to) url += `to=${to}`;
+            if (activeRequestController) activeRequestController.abort();
+            const controller = new AbortController();
+            activeRequestController = controller;
+
+            const params = new URLSearchParams();
+            if (from) params.set('from', from);
+            if (to) params.set('to', to);
+            const url = `/api/polyvalence-data?${params.toString()}`;
+
+            refreshButton.disabled = true;
+            refreshButton.textContent = '⏳ Načítám data…';
+            setDataStatus('Načítám data ze SQL…');
 
             try {
-                const response = await fetch(url);
-                const data = await response.json();
+                const response = await fetch(url, { signal: controller.signal });
+                let data = {};
+                try {
+                    data = await response.json();
+                } catch (parseError) {
+                    throw new Error('Server vrátil neplatnou odpověď.');
+                }
                 if (!response.ok) throw new Error(data.error || 'Server returned an error');
                 allRecords = data.records || [];
                 populateDropdowns();
                 filterData();
+                setDataStatus(`Načteno ${allRecords.length} záznamů • ${new Date().toLocaleTimeString('cs-CZ')}`, 'success');
             } catch (err) {
+                if (err.name === 'AbortError') return;
                 console.error("Chyba při načítání dat:", err);
-                alert("Nepodařilo se načíst data ze serveru.");
+                setDataStatus(`Data se nepodařilo načíst: ${err.message}`, 'error');
+            } finally {
+                if (activeRequestController === controller) {
+                    activeRequestController = null;
+                    refreshButton.disabled = false;
+                    refreshButton.textContent = '🔄 Obnovit data z SQL';
+                }
             }
         }
 
@@ -519,6 +594,7 @@
             document.getElementById('inputL').value = thresholds.L;
             document.getElementById('inputU').value = thresholds.U;
             document.getElementById('inputO').value = thresholds.O;
+            document.getElementById('settings-error').textContent = '';
             document.getElementById('settingsModal').style.display = 'flex';
         }
 
@@ -526,17 +602,60 @@
             document.getElementById('settingsModal').style.display = 'none';
         }
 
+        function resetThresholds() {
+            document.getElementById('inputI').value = defaultThresholds.I;
+            document.getElementById('inputL').value = defaultThresholds.L;
+            document.getElementById('inputU').value = defaultThresholds.U;
+            document.getElementById('inputO').value = defaultThresholds.O;
+            document.getElementById('settings-error').textContent = '';
+        }
+
+        function readThresholdsFromInputs() {
+            const values = {
+                I: Number(document.getElementById('inputI').value),
+                L: Number(document.getElementById('inputL').value),
+                U: Number(document.getElementById('inputU').value),
+                O: Number(document.getElementById('inputO').value)
+            };
+            const error = document.getElementById('settings-error');
+            const allValid = Object.values(values).every(value => Number.isInteger(value) && value >= 0 && value <= 2147483647);
+
+            if (!allValid) {
+                error.textContent = 'Všechny limity musí být celá čísla od 0 do 2 147 483 647.';
+                return null;
+            }
+
+            if (!(values.I <= values.L && values.L <= values.U && values.U <= values.O)) {
+                error.textContent = 'Limity musí být v pořadí I ≤ L ≤ U ≤ O.';
+                return null;
+            }
+
+            error.textContent = '';
+            return values;
+        }
+
         function saveSettings() {
-            thresholds.I = parseInt(document.getElementById('inputI').value) || 7200;
-            thresholds.L = parseInt(document.getElementById('inputL').value) || 144000;
-            thresholds.U = parseInt(document.getElementById('inputU').value) || 288000;
-            thresholds.O = parseInt(document.getElementById('inputO').value) || 1728000;
+            const nextThresholds = readThresholdsFromInputs();
+            if (!nextThresholds) return;
+
+            thresholds = nextThresholds;
 
             localStorage.setItem('polyvalence_thresholds', JSON.stringify(thresholds));
 
             closeSettings();
             filterData();
+            setDataStatus('Limity byly uloženy.', 'success');
         }
+
+        document.getElementById('settingsModal').addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) closeSettings();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && document.getElementById('settingsModal').style.display === 'flex') {
+                closeSettings();
+            }
+        });
 
         window.onload = () => {
             initDefaultDates();
