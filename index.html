@@ -345,13 +345,55 @@
             numeric: true,
             sensitivity: 'base'
         });
+        const formCodeCollator = new Intl.Collator('cs-CZ', {
+            numeric: false,
+            sensitivity: 'base'
+        });
+
+        function getFormSortParts(item) {
+            const raw = String(item.key || item.label || '').trim().toUpperCase();
+            const match = raw.match(/^([A-Z]+)(\d+)(.*)$/);
+
+            if (!match) {
+                return {
+                    raw,
+                    prefix: raw,
+                    numberText: null,
+                    suffix: ''
+                };
+            }
+
+            return {
+                raw,
+                prefix: match[1],
+                numberText: match[2],
+                suffix: match[3]
+            };
+        }
 
         function compareForms(first, second) {
-            const firstKey = String(first.key || first.label || '');
-            const secondKey = String(second.key || second.label || '');
-            const keyResult = formCollator.compare(firstKey, secondKey);
+            const firstParts = getFormSortParts(first);
+            const secondParts = getFormSortParts(second);
 
-            if (keyResult !== 0) return keyResult;
+            // Numbered forms first; text-only entries such as ASSEMBLY go last.
+            if (firstParts.numberText === null && secondParts.numberText !== null) return 1;
+            if (firstParts.numberText !== null && secondParts.numberText === null) return -1;
+
+            const prefixResult = formCodeCollator.compare(firstParts.prefix, secondParts.prefix);
+            if (prefixResult !== 0) return prefixResult;
+
+            // Compare the code from left to right: M01 < M02 and MO2... < MO3...
+            // This keeps the MO2... family ahead of MO3..., even for longer codes.
+            if (firstParts.numberText !== null && secondParts.numberText !== null) {
+                const numberResult = formCodeCollator.compare(firstParts.numberText, secondParts.numberText);
+                if (numberResult !== 0) return numberResult;
+            }
+
+            const suffixResult = formCodeCollator.compare(firstParts.suffix, secondParts.suffix);
+            if (suffixResult !== 0) return suffixResult;
+
+            const rawResult = formCodeCollator.compare(firstParts.raw, secondParts.raw);
+            if (rawResult !== 0) return rawResult;
             return formCollator.compare(String(first.label || ''), String(second.label || ''));
         }
 
