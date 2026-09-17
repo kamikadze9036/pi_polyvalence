@@ -367,6 +367,7 @@
                 raw,
                 prefix: match[1],
                 numberText: match[2],
+                numberGroup: match[2][0],
                 suffix: match[3]
             };
         }
@@ -382,9 +383,17 @@
             const prefixResult = formCodeCollator.compare(firstParts.prefix, secondParts.prefix);
             if (prefixResult !== 0) return prefixResult;
 
-            // Compare the code from left to right: M01 < M02 and MO2... < MO3...
-            // This keeps the MO2... family ahead of MO3..., even for longer codes.
+            // Keep the main code family together: MO2... before MO3...
             if (firstParts.numberText !== null && secondParts.numberText !== null) {
+                const groupResult = formCodeCollator.compare(firstParts.numberGroup, secondParts.numberGroup);
+                if (groupResult !== 0) return groupResult;
+
+                // Within one family, shorter codes come first:
+                // MO2330 < MO24839 < MO2300047.
+                const lengthResult = firstParts.numberText.length - secondParts.numberText.length;
+                if (lengthResult !== 0) return lengthResult;
+
+                // Finally compare the digits from left to right: M01 < M02.
                 const numberResult = formCodeCollator.compare(firstParts.numberText, secondParts.numberText);
                 if (numberResult !== 0) return numberResult;
             }
